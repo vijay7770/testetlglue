@@ -1,0 +1,50 @@
+import sys
+from awsglue.transforms import *
+from awsglue.utils import getResolvedOptions
+from pyspark.context import SparkContext
+from awsglue.context import GlueContext
+from awsglue.job import Job
+from pyspark.sql.functions import lit
+from pyspark.sql import functions as f
+
+
+## @params: [JOB_NAME]
+args = getResolvedOptions(sys.argv, ['JOB_NAME'])
+
+sc = SparkContext()
+glueContext = GlueContext(sc)
+spark = glueContext.spark_session
+job = Job(glueContext)
+job.init(args['JOB_NAME'], args)
+## @type: DataSource
+## @args: [database = "testetlglue", table_name = "testetlglue", transformation_ctx = "datasource0"]
+## @return: datasource0
+## @inputs: []
+datasource0 = glueContext.create_dynamic_frame.from_catalog(database = "testetlglue", table_name = "testetlglue", transformation_ctx = "datasource0")
+##datasource1 = datasource0.toDF().withColumn("Cat",lit("myval"))
+datasource3 = datasource0.toDF().withColumn("Name",f.when(f.col('Name') == '', lit ("NO NAME")).otherwise(f.col('Name')))  
+datasource1 = datasource3.withColumn("Cat",f.when(f.col('Age').between(18,58), lit("Adult")).otherwise(f.when(f.col('Age').between(0,17), lit("Kid")).otherwise(lit("old"))) )
+
+datasource2 = datasource0.fromDF(datasource1,glueContext,"datasource2")
+
+## @type: ApplyMapping
+## @args: [mapping = [("ssn", "long", "ssn", "long"), ("name", "string", "name", "string"), ("age", "long", "age", "long"), ("addr", "string", "addr", "string"), ("city", "string", "city", "string"), ("st", "string", "st", "string")], transformation_ctx = "applymapping1"]
+## @return: applymapping1
+## @inputs: [frame = datasource2]
+applymapping1 = ApplyMapping.apply(frame = datasource2, mappings = [("ssn", "long", "ssn", "long"), ("name", "string", "name", "string"), ("age", "long", "age", "long"), ("addr", "string", "addr", "string"), ("city", "string", "city", "string"), ("st", "string", "st", "string"), ("Cat", "string", "Cat", "string")], transformation_ctx = "applymapping1")
+## @type: ResolveChoice
+## @args: [choice = "make_struct", transformation_ctx = "resolvechoice2"]
+## @return: resolvechoice2
+## @inputs: [frame = applymapping1]
+resolvechoice2 = ResolveChoice.apply(frame = applymapping1, choice = "make_struct", transformation_ctx = "resolvechoice2")
+## @type: DropNullFields
+## @args: [transformation_ctx = "dropnullfields3"]
+## @return: dropnullfields3
+## @inputs: [frame = resolvechoice2]
+dropnullfields3 = DropNullFields.apply(frame = resolvechoice2, transformation_ctx = "dropnullfields3")
+## @type: DataSink
+## @args: [connection_type = "s3", connection_options = {"path": "s3://testetlglue-demo"}, format = "parquet", transformation_ctx = "datasink4"]
+## @return: datasink4
+## @inputs: [frame = dropnullfields3]
+datasink4 = glueContext.write_dynamic_frame.from_options(frame = dropnullfields3, connection_type = "s3", connection_options = {"path": "s3://testetlglue-demo"}, format = "parquet", transformation_ctx = "datasink4")
+job.commit()
